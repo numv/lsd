@@ -26,7 +26,7 @@ pub use self::size::Size;
 pub use self::symlink::SymLink;
 pub use crate::icon::Icons;
 
-use crate::flags::{Display, Flags, Layout};
+use crate::flags::{Block, Display, Flags, Layout};
 use crate::print_error;
 
 use std::io::{Error, ErrorKind};
@@ -88,7 +88,7 @@ impl Meta {
             current_meta.name.name = ".".to_owned();
 
             let mut parent_meta =
-                Self::from_path(&self.path.join(Component::ParentDir), flags.dereference.0)?;
+                Self::from_path_flags(&self.path.join(Component::ParentDir), flags)?;
             parent_meta.name.name = "..".to_owned();
 
             content.push(current_meta);
@@ -113,7 +113,7 @@ impl Meta {
                 }
             }
 
-            let mut entry_meta = match Self::from_path(&path, flags.dereference.0) {
+            let mut entry_meta = match Self::from_path_flags(&path, flags) {
                 Ok(res) => res,
                 Err(err) => {
                     print_error!("{}: {}.", path.display(), err);
@@ -202,7 +202,29 @@ impl Meta {
         }
     }
 
+    pub fn from_path_flags(path: &Path, flags: &Flags) -> Result<Self, std::io::Error> {
+        let dereference: bool = flags.dereference.0;
+
+        return Self::from_path(
+            path,
+            dereference,
+            flags.blocks.0.contains(&Block::Permission)
+                || flags.blocks.0.contains(&Block::User)
+                || flags.blocks.0.contains(&Block::Group),
+        );
+    }
+
+    /*
     pub fn from_path(path: &Path, dereference: bool) -> Result<Self, std::io::Error> {
+        return Self::from_path_main(path, dereference, false);
+    }
+    */
+
+    pub fn from_path(
+        path: &Path,
+        dereference: bool,
+        load_permissions: bool,
+    ) -> Result<Self, std::io::Error> {
         let mut metadata = path.symlink_metadata()?;
         let mut symlink_meta = None;
         if metadata.file_type().is_symlink() {
@@ -229,8 +251,35 @@ impl Meta {
         #[cfg(unix)]
         let permissions = Permissions::from(&metadata);
 
+        //TODO Refactor get flags here
         #[cfg(windows)]
-        let (owner, permissions) = windows_utils::get_file_data(path)?;
+        let owg = String::from("unknown");
+        #[cfg(windows)]
+        let ow = String::from("unknown");
+        #[cfg(windows)]
+        let mut owner = Owner::new(ow, owg);
+        #[cfg(windows)]
+        let mut permissions = Permissions {
+            user_read: true,
+            user_write: true,
+            user_execute: true,
+
+            group_read: true,
+            group_write: true,
+            group_execute: true,
+
+            other_read: true,
+            other_write: true,
+            other_execute: true,
+
+            sticky: false,
+            setuid: false,
+            setgid: false,
+        };
+        #[cfg(windows)]
+        if load_permissions {
+            (owner, permissions) = windows_utils::get_file_data(path)?;
+        }
 
         let access_control = AccessControl::for_path(path);
         let file_type = FileType::new(&metadata, symlink_meta.as_ref(), &permissions);

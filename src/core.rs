@@ -99,7 +99,7 @@ impl Core {
         };
 
         for path in paths {
-            let mut meta = match Meta::from_path(&path, self.flags.dereference.0) {
+            let mut meta = match Meta::from_path_flags(&path, &self.flags) {
                 Ok(meta) => meta,
                 Err(err) => {
                     print_error!("{}: {}.", path.display(), err);
